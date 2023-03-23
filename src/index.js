@@ -6,7 +6,7 @@ const CacheCollection = require('./structures/cacheCollection.js');
 const InstanceStructure = require('./structures/instance.js');
 
 module.exports = class ContaboAPI extends EventEmitter {
-    constructor({ clientId, clientSecret, apiUsername, apiPassword, autoUpdateEnabled = true }) {
+    constructor({ clientId, clientSecret, apiUsername, apiPassword, autoUpdateEnabled = true, noEmits = false }) {
         super();
         if (!clientId || !clientSecret || !apiUsername || !apiPassword) throw new Error(`Please provide a clientId, clientSecret, apiUsername, and a apiPassword.`)
         this.clientId = clientId
@@ -18,11 +18,14 @@ module.exports = class ContaboAPI extends EventEmitter {
         this.authed = false;
         this.instancesCached = false;
         this.autoUpdateEnabled = autoUpdateEnabled; // default is true to keep it backward compatible
+        this.noEmits = noEmits; // default is false to keep it backward compatible
         if(this.autoUpdateEnabled) {
             this.auth.bind(this)()
             this.cacheInstances.bind(this)()
-            this.once('instancesCached', () => { this.instancesCached = true; if(this.authed && this.instancesCached) this.emit('ready', this) })
-            this.once('clientAuthed', () => { this.authed = true; if(this.authed && this.instancesCached) this.emit('ready', this) })
+            if(!this.noEmits) {
+                this.once('instancesCached', () => { this.instancesCached = true; if(this.authed && this.instancesCached) this.emit('ready', this) })
+                this.once('clientAuthed', () => { this.authed = true; if(this.authed && this.instancesCached) this.emit('ready', this) })
+            }
             setInterval(this.auth.bind(this), 285000)
             setInterval(this.cacheInstances.bind(this), 280000)
         }
@@ -41,7 +44,8 @@ module.exports = class ContaboAPI extends EventEmitter {
         }
         const instances = await this.getInstances.bind(this)()
         instances.map(instance => this.instances.set(instance.instanceId, instance))
-        this.emit('instancesCached', this.instances);
+        if(!this.noEmits)
+            this.emit('instancesCached', this.instances);
     }
 
     async auth() {
@@ -55,17 +59,20 @@ module.exports = class ContaboAPI extends EventEmitter {
         });
         if(response.status < 200 || response.status > 299) {
             const errMessage = `Failed to auth with Contabo API. HTTP Status Code: ${response.status} - ${response.statusText}`
-            this.emit('error', new Error(errMessage))
+            if(!this.noEmits)
+                this.emit('error', new Error(errMessage))
             throw new Error(errMessage)
         }
         const r = await response.json()
         if(r.statusCode) {
             const errMessage = `Failed to auth with Contabo API. API Status Code: ${r.statusCode} - ${r.message}`
-            this.emit('error', new Error(errMessage))
+            if(!this.noEmits)
+                this.emit('error', new Error(errMessage))
             throw new Error(r.message)
         }
         this.authKey = r.access_token
-        this.emit('clientAuthed')
+        if(!this.noEmits)
+            this.emit('clientAuthed')
         return r
     }
     async getInstance(instanceId) {
